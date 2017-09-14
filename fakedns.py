@@ -1,14 +1,20 @@
-#!/usr/bin/env python3
-# (c) 2014 Patryk Hes
-import socketserver
 import sys
+import argparse
+from functools import partial
+try:
+    import SocketServer as socketserver
+except ImportError:
+    import socketserver
 
 DNS_HEADER_LENGTH = 12
-# TODO make some DNS database with IPs connected to regexs
-IP = '192.168.1.1'
 
 
-class DNSHandler(socketserver.BaseRequestHandler):
+class Handler(socketserver.BaseRequestHandler):
+
+    def __init__(self, reply, *args, **kwargs):
+        self.reply = reply
+        socketserver.BaseRequestHandler.__init__(self, *args, **kwargs)
+
     def handle(self):
         socket = self.request[1]
         data = self.request[0].strip()
@@ -23,11 +29,12 @@ class DNSHandler(socketserver.BaseRequestHandler):
         except IndexError:
             return
 
+        print all_questions
         # Filter only those questions, which have QTYPE=A and QCLASS=IN
         # TODO this is very limiting, remove QTYPE filter in future, handle different QTYPEs
         accepted_questions = []
         for question in all_questions:
-            name = str(b'.'.join(question['name']), encoding='UTF-8')
+            name = unicode(b'.'.join(question['name']))
             if question['qtype'] == b'\x00\x01' and question['qclass'] == b'\x00\x01':
                 accepted_questions.append(question)
                 print('\033[32m{}\033[39m'.format(name))
@@ -48,7 +55,8 @@ class DNSHandler(socketserver.BaseRequestHandler):
         """
         questions = []
         # Get number of questions from header's QDCOUNT
-        n = (data[4] << 8) + data[5]
+        #data = [ord(c) for c in data]
+        n = (ord(data[4]) << 8) + ord(data[5])
         # Where we actually read in data? Start at beginning of question sections.
         pointer = DNS_HEADER_LENGTH
         # Read each question section
@@ -58,14 +66,14 @@ class DNSHandler(socketserver.BaseRequestHandler):
                 'qtype': '',
                 'qclass': '',
             }
-            length = data[pointer]
+            length = ord(data[pointer])
             # Read each label from QNAME part
             while length != 0:
                 start = pointer + 1
                 end = pointer + length + 1
                 question['name'].append(data[start:end])
                 pointer += length + 1
-                length = data[pointer]
+                length = ord(data[pointer])
             # Read QTYPE
             question['qtype'] = data[pointer+1:pointer+3]
             # Read QCLASS
@@ -112,7 +120,7 @@ class DNSHandler(socketserver.BaseRequestHandler):
             section = b''
             for label in question['name']:
                 # Length octet
-                section += bytes([len(label)])
+                section += chr(len(label))
                 section += label
             # Zero length octet
             section += b'\x00'
@@ -131,10 +139,10 @@ class DNSHandler(socketserver.BaseRequestHandler):
             record = b''
             for label in question['name']:
                 # Length octet
-                record += bytes([len(label)])
+                record += chr(len(label))
                 record += label
             # Zero length octet
-            record += b'\x00'
+            record += '\x00'
             # TYPE - just copy QTYPE
             # TODO QTYPE values set is superset of TYPE values set, handle different QTYPEs, see RFC 1035 3.2.3.
             record += question['qtype']
@@ -143,24 +151,30 @@ class DNSHandler(socketserver.BaseRequestHandler):
             record += question['qclass']
             # TTL - 32 bit unsigned integer. Set to 0 to inform, that response
             # should not be cached.
-            record += b'\x00\x00\x00\x00'
+            record += '\x00\x00\x00\x00'
             # RDLENGTH - 16 bit unsigned integer, length of RDATA field.
             # In case of QTYPE=A and QCLASS=IN, RDLENGTH=4.
-            record += b'\x00\x04'
+            record += '\x00\x04'
             # RDATA - in case of QTYPE=A and QCLASS=IN, it's IPv4 address.
-            record += b''.join(map(
-                lambda x: bytes([int(x)]),
-                IP.split('.')
+            print self.reply
+            record += ''.join(map(
+                lambda x: chr(int(x)),
+                self.reply.split('.')
             ))
             records += record
         return records
 
+
 if __name__ == '__main__':
-    # Minimal configuration - allow to pass IP in configuration
-    if len(sys.argv) > 1:
-        IP = sys.argv[1]
-    host, port = '', 53
-    server = socketserver.ThreadingUDPServer((host, port), DNSHandler)
+    import argparse
+    parser = argparse.ArgumentParser(description='Fake DNS server')
+    parser.add_argument('--host', type=str, required=False, help='listen host', default='0.0.0.0')
+    parser.add_argument('--port', type=int, required=False, help='listen port', default=53)
+    parser.add_argument('--reply', type=str, required=False, help='ipaddr to reply')
+
+    args = parser.parse_args()
+    print(args)
+    server = socketserver.ThreadingUDPServer((args.host, args.port), partial(Handler, args.reply or args.host))
     print('\033[36mStarted DNS server.\033[39m')
     try:
         server.serve_forever()

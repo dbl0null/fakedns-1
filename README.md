@@ -1,6 +1,6 @@
 # fakedns
 
-> Fake DNS server written in python 3
+> Fake DNS server written in python 2
 
 ## What it does?
 
@@ -8,17 +8,32 @@ It responds to DNS `A` questions (host address questions), responding with the s
 
 ## Usage
 
-Get information on your server's local IP address. Then set it as a nameserver in client's `/etc/resolv.conf` file (server can also be a client).
-Assuming that your server's local IP is 192.168.1.5, client's `/etc/resolv.conf` file should look like this:
-
 ```
-nameserver 192.168.1.5
+$ python fakedns.py --help
+usage: fakedns.py [-h] [--host HOST] [--port PORT] [--reply REPLY]
+
+Fake DNS server
+
+optional arguments:
+  -h, --help     show this help message and exit
+  --host HOST    listen host
+  --port PORT    listen port
+  --reply REPLY  ipaddr to reply
 ```
 
-Launch `fakedns.py` on server. It uses port 53, so you need to `sudo`. Assuming that you want to redirect all HTTP traffic to 192.168.1.6:
 
 ```shell
-sudo python3 fakedns.py 192.168.1.6
+$ python fakedns.py --port 1024
+```
+
+```shell
+$ nslookup -port 1024  www.baidu.com  0.0.0.0
+Server:         0.0.0.0
+Address:        0.0.0.0#1024
+
+Non-authoritative answer:
+Name:   www.baidu.com
+Address: 0.0.0.0
 ```
 
 ## License
